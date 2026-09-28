@@ -2,6 +2,23 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
+
+
+def _load_local_env() -> None:
+    """Load the repository's ignored .env without adding a dotenv dependency."""
+    path = Path.cwd() / ".env"
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_local_env()
 
 
 def _bool(name: str, default: bool = False) -> bool:
