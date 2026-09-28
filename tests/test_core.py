@@ -1,0 +1,31 @@
+from datetime import datetime, timedelta, timezone
+
+from coinbase_trader.config import Settings
+from coinbase_trader.jev import JevDecisionEngine
+from coinbase_trader.models import Candle, Decision, Observation, Position
+from coinbase_trader.risk import exit_reason
+
+
+def test_product_allowlist_is_fixed():
+    settings = Settings()
+    assert settings.validate_product("btc-usd") == "BTC-USD"
+    try:
+        settings.validate_product("SOL-USD")
+    except ValueError as error:
+        assert "allowlist" in str(error)
+    else:
+        raise AssertionError("unlisted products must be rejected")
+
+
+def test_jev_accepts_volume_confirmed_momentum():
+    observation = Observation("BTC-USD", 101, 0.01, 2.0, 1.2, 0.003)
+    assert JevDecisionEngine().decide(observation).decision == Decision.ACCEPT
+
+
+def test_trailing_stop_updates_peak_and_exits():
+    settings = Settings()
+    opened = datetime.now(timezone.utc) - timedelta(minutes=2)
+    position = Position("BTC-USD", 100, 1, opened, 100)
+    assert exit_reason(position, 105, opened, settings) is None
+    assert exit_reason(position, 103.5, opened, settings) == "trailing_stop"
+

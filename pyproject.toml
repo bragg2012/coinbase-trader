@@ -1,0 +1,16 @@
+[project]
+name = "coinbase-trader"
+version = "0.1.0"
+description = "BTC/ETH day-trading research, JEV decisions, backtesting, and guarded Coinbase execution"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+coinbase-trader = "coinbase_trader.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
