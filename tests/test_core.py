@@ -26,6 +26,5 @@ def test_trailing_stop_updates_peak_and_exits():
     settings = Settings()
     opened = datetime.now(timezone.utc) - timedelta(minutes=2)
     position = Position("BTC-USD", 100, 1, opened, 100)
-    assert exit_reason(position, 105, opened, settings) is None
-    assert exit_reason(position, 103.5, opened, settings) == "trailing_stop"
-
+    assert exit_reason(position, 101, opened, settings) is None
+    assert exit_reason(position, 99.6, opened, settings) == "trailing_stop"
