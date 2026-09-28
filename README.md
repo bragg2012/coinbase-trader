@@ -38,8 +38,11 @@ cp .env.example .env
 python -m coinbase_trader.cli snapshot
 python -m coinbase_trader.cli download --symbol BTC-USD --days 30 --granularity FIVE_MINUTE --out data/btc-usd-5m.csv
 python -m coinbase_trader.cli backtest --csv data/btc-usd-5m.csv --symbol BTC-USD --report reports/btc-jev.json
+python -m coinbase_trader.cli dummy-backtest --symbol BTC-USD --hours 72 --report reports/dummy-trend.json
 pytest -q
 ```
+
+`dummy-backtest` generates deterministic 1-minute Coinbase-shaped OHLCV data, derives closed 1m/5m/15m/1h trend and momentum features, and reports the same run with rules-only versus Jev-filtered entries/exits. It is intended to verify plumbing and accounting before credentials or Coinbase data are configured; it is not evidence of profitability.
 
 Historical market data uses Coinbase's public Exchange candles endpoint, so download/backtest do not need credentials. Coinbase Advanced Trade/Agents remains the account and execution boundary. For the execution path, install and configure Coinbase for Agents separately:
 

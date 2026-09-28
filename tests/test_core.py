@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 from coinbase_trader.config import Settings
 from coinbase_trader.backtest import run
+from coinbase_trader.backtest import run_trend_momentum
+from coinbase_trader.features import build_snapshot, synthetic_coinbase_candles
 from coinbase_trader.jev import JevDecisionEngine
 from coinbase_trader.models import Candle, Decision, Observation, Position
 from coinbase_trader.risk import estimated_net_pnl_quote, exit_reason
@@ -52,3 +54,20 @@ def test_fee_adjusted_pnl_and_take_profit():
     assert estimated_net_pnl_quote(position, 101.0, settings) < 0
     assert exit_reason(position, 101.8, opened, settings) is None
     assert exit_reason(position, 103.1, opened, settings) == "take_profit"
+
+
+def test_multitimeframe_snapshot_has_closed_frames_and_signal_state():
+    candles = synthetic_coinbase_candles(hours=36)
+    snapshot = build_snapshot(candles, "BTC-USD")
+    assert snapshot is not None
+    assert {frame.timeframe for frame in snapshot.frames} == {"1m", "5m", "15m", "1h"}
+    assert "timeframes" in snapshot.to_state()
+
+
+def test_multitimeframe_backtest_compares_jev_filter():
+    candles = synthetic_coinbase_candles(hours=36)
+    settings = Settings(jev_sell_enabled=True)
+    rules_only = run_trend_momentum(candles, settings, use_jev=False)
+    with_jev = run_trend_momentum(candles, settings, use_jev=True)
+    assert rules_only.jev_calls == ()
+    assert with_jev.entries <= rules_only.entries

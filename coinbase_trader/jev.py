@@ -6,6 +6,7 @@ import os
 import time
 import urllib.error
 import urllib.request
+from dataclasses import replace
 
 from .models import Decision, DecisionRecord, Observation, Position
 
@@ -32,6 +33,30 @@ class JevDecisionEngine:
         if observation.momentum < -0.002 and observation.volume_ratio >= 1.25:
             return True, "negative momentum with volume expansion"
         return False, "no deterministic sell-pressure trigger"
+
+    def decide_signal(self, signal: dict, product_id: str) -> DecisionRecord:
+        """Evaluate a rich feature state while retaining the simple Jev-compatible API."""
+        if "timeframes" in signal:
+            frames = signal["timeframes"]
+            score = int(signal.get("trend_score", 0))
+            volume_ratio = float(frames["1m"]["volume_ratio"])
+            if signal.get("entry_signal") and score >= 6 and volume_ratio >= 1.10:
+                payload = json.dumps(signal, sort_keys=True).encode()
+                return DecisionRecord(product_id, Decision.ACCEPT, min(0.95, 0.60 + score / 20), ("multi-timeframe trend alignment", "volume confirmation"), hashlib.sha256(payload).hexdigest())
+            if score > 0:
+                payload = json.dumps(signal, sort_keys=True).encode()
+                return DecisionRecord(product_id, Decision.WATCH, 0.55, ("trend is positive but setup confirmation is incomplete",), hashlib.sha256(payload).hexdigest())
+        observation = Observation(
+            product_id,
+            float(signal["timeframes"]["1m"]["close"]),
+            float(signal["timeframes"]["1m"]["return_lookback"]),
+            float(signal["timeframes"]["1m"]["volume_ratio"]),
+            float(signal["timeframes"]["1m"]["atr"]) / float(signal["timeframes"]["1m"]["close"]),
+            float(signal["timeframes"]["1m"]["macd_histogram"]) / float(signal["timeframes"]["1m"]["close"]),
+        )
+        result = self.decide(observation)
+        digest = hashlib.sha256(json.dumps(signal, sort_keys=True).encode()).hexdigest()
+        return replace(result, input_hash=digest)
 
 
 class HttpJevDecisionEngine(JevDecisionEngine):
@@ -67,7 +92,10 @@ class HttpJevDecisionEngine(JevDecisionEngine):
         return result
 
     def decide(self, observation: Observation) -> DecisionRecord:
-        state = json.dumps({"action": "ENTRY", "observation": observation.__dict__}, sort_keys=True)
+        return self._decide_state({"action": "ENTRY", "observation": observation.__dict__}, observation.product_id)
+
+    def _decide_state(self, state_payload: dict, product_id: str) -> DecisionRecord:
+        state = json.dumps(state_payload, sort_keys=True)
         request = {
             "state": state,
             "model": os.getenv("JEV_MODEL", "jev-1.13.0"),
@@ -95,8 +123,11 @@ class HttpJevDecisionEngine(JevDecisionEngine):
         decision = Decision(raw) if raw in {item.value for item in Decision} else Decision.REJECT
         quality = answers.get("setup_quality", {})
         reasons = (f"TypeSafe disposition={raw}", f"setup_quality={quality.get('score', 'unknown')}")
-        payload = json.dumps(observation.__dict__, sort_keys=True).encode()
-        return DecisionRecord(observation.product_id, decision, float(disposition.get("confidence", 0)), reasons, hashlib.sha256(payload).hexdigest())
+        payload = json.dumps(state_payload, sort_keys=True).encode()
+        return DecisionRecord(product_id, decision, float(disposition.get("confidence", 0)), reasons, hashlib.sha256(payload).hexdigest())
+
+    def decide_signal(self, signal: dict, product_id: str) -> DecisionRecord:
+        return self._decide_state(signal, product_id)
 
     def sell_gate(self, observation: Observation, position: Position, context: dict | None = None) -> tuple[bool, str]:
         position_payload = {**position.__dict__, "opened_at": position.opened_at.isoformat()}
