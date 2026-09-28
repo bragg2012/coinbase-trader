@@ -39,10 +39,18 @@ python -m coinbase_trader.cli snapshot
 python -m coinbase_trader.cli download --symbol BTC-USD --days 30 --granularity FIVE_MINUTE --out data/btc-usd-5m.csv
 python -m coinbase_trader.cli backtest --csv data/btc-usd-5m.csv --symbol BTC-USD --report reports/btc-jev.json
 python -m coinbase_trader.cli dummy-backtest --symbol BTC-USD --hours 72 --report reports/dummy-trend.json
+python -m coinbase_trader.cli listing-scan --state storage/listing-catalog.json --report reports/listings.json
+python -m coinbase_trader.cli pair-scan --assets BTC,ETH --report reports/quote-pairs.json
 pytest -q
 ```
 
 `dummy-backtest` generates deterministic 1-minute Coinbase-shaped OHLCV data, derives closed 1m/5m/15m/1h trend and momentum features, and reports the same run with rules-only versus Jev-filtered entries/exits. It is intended to verify plumbing and accounting before credentials or Coinbase data are configured; it is not evidence of profitability.
+
+`listing-scan` reads Coinbase Advanced's public spot-product catalog and diffs it against a local snapshot. The first run only establishes the baseline; later runs report newly seen markets and market phase changes, including when post-only markets become fully open. Events are retained in the local state file. The command never trades. Run it on a modest schedule (for example every 5–15 minutes); the eventual always-on service can use Coinbase's WebSocket status feed instead of polling.
+
+`pair-scan` compares USD and USDC markets for selected base assets. Its round-trip estimate combines the configured entry/exit fee assumption with a simulated buy and sell through the top ten book levels for `MAX_POSITION_QUOTE`; it also checks that book depth exceeds the configured threshold. Conversion-cost assumptions can be set with `USD_CONVERSION_COST_BPS` and `USDC_CONVERSION_COST_BPS`. This is a screening estimate, not a fee quote: use the actual account tier and order preview before trading, and account for GBP funding or conversions separately.
+
+For capital management, keep one quote currency for the initial BTC/ETH strategy if both markets are sufficiently liquid and their all-in costs are close. Pair scans report both each asset's lowest-cost route and a common quote currency available for all requested assets. Pin that quote choice; do not switch automatically on every scan. If evidence later supports different quotes per asset, use explicit USD and USDC budget caps and only rebalance between them when the conversion cost is lower than the expected benefit. The portfolio can hold more than one quote asset, but the bot should count only its configured, available quote balance toward new entries.
 
 Historical market data uses Coinbase's public Exchange candles endpoint, so download/backtest do not need credentials. Coinbase Advanced Trade/Agents remains the account and execution boundary. For the execution path, install and configure Coinbase for Agents separately:
 
@@ -67,6 +75,10 @@ Copy `.env.example` to `.env`. Important values:
 | `JEV_MODE` | `DETERMINISTIC` | local JEV-compatible decision boundary |
 | `ENABLE_LIVE_TRADING` | `false` | second live-trading guard |
 | `COINBASE_CLI_ENABLED` | `false` | permits agent execution adapter |
+| `DISCOVERY_QUOTE_CURRENCIES` | `USD,USDC` | quote markets compared by pair-scan |
+| `MIN_LISTING_DEPTH_QUOTE` | `5000` | minimum top-ten book depth per side for a pair to qualify |
+| `USD_CONVERSION_COST_BPS` | `0` | operator-supplied estimated conversion cost for USD funding |
+| `USDC_CONVERSION_COST_BPS` | `0` | operator-supplied estimated conversion cost for USDC funding |
 
 The initial JEV implementation is deterministic and auditable. It emits `ACCEPT`, `WATCH`, or `REJECT` with reasons and an input hash. Set `JEV_MODE=HTTP` and add `TYPESAFE_API_KEY` to call Jev at `https://api.typesafe.ai/v1/systemone`; the adapter sends TypeSafe System One `state` plus typed Choice/Score questions for entry and sell-pressure decisions. Request/response pairs are preserved in the report path for replay. Do not call a live endpoint blindly for a month of bars: the runner only calls JEV at each causal entry/position decision.
 
