@@ -1,20 +1,13 @@
 from __future__ import annotations
 
-import http.client
-import json
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from datetime import datetime, timedelta, timezone
 
+from .coinbase_agents import CoinbaseAgentsCLI
 from .models import Candle, Observation
 
 
 class CoinbaseMarketData:
-    """Public Coinbase historical market-data client; no credentials required."""
-
-    base_url = "https://api.exchange.coinbase.com"
+    """Historical Coinbase market data obtained through Coinbase for Agents CLI."""
 
     granularity_seconds = {
         "ONE_MINUTE": 60,
@@ -24,36 +17,34 @@ class CoinbaseMarketData:
         "SIX_HOUR": 21600,
         "ONE_DAY": 86400,
     }
+    cli_granularity = {"ONE_MINUTE": "1m", "FIVE_MINUTE": "5m", "FIFTEEN_MINUTE": "15m", "ONE_HOUR": "1h", "SIX_HOUR": "6h", "ONE_DAY": "1d"}
+
+    def __init__(self, client: CoinbaseAgentsCLI | None = None):
+        self.client = client or CoinbaseAgentsCLI()
+
+    @staticmethod
+    def _time(value: str | int | float) -> datetime:
+        if isinstance(value, (int, float)) or str(value).isdigit():
+            return datetime.fromtimestamp(float(value), tz=timezone.utc)
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
 
     def _request(self, product_id: str, *, limit: int = 120, granularity: str = "ONE_MINUTE", start: int | None = None, end: int | None = None) -> list[Candle]:
-        url = f"{self.base_url}/products/{urllib.parse.quote(product_id)}/candles"
-        params = {"granularity": self.granularity_seconds[granularity]}
+        args = ["products", "candles", product_id, f"granularity=={self.cli_granularity[granularity]}", f"limit=={limit}"]
         if start is not None:
-            params["start"] = start
+            args.append(f"start=={datetime.fromtimestamp(start, tz=timezone.utc).isoformat().replace('+00:00', 'Z')}")
         if end is not None:
-            params["end"] = end
-        query = urllib.parse.urlencode(params)
-        request = urllib.request.Request(f"{url}?{query}", headers={"User-Agent": "coinbase-trader/0.1"})
-        payload = None
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(request, timeout=30) as response:
-                    payload = json.load(response)
-                break
-            except (http.client.RemoteDisconnected, urllib.error.HTTPError, urllib.error.URLError):
-                if attempt == 2:
-                    raise
-                time.sleep(0.5 * (attempt + 1))
-        rows = payload if isinstance(payload, list) else []
+            args.append(f"end=={datetime.fromtimestamp(end, tz=timezone.utc).isoformat().replace('+00:00', 'Z')}")
+        payload = self.client.run(*args)
+        rows = payload.get("candles", []) if isinstance(payload, dict) else []
         candles = [
             Candle(
-                timestamp=datetime.fromtimestamp(int(row[0]), tz=timezone.utc),
+                timestamp=self._time(row["start"]),
                 product_id=product_id,
-                low=float(row[1]),
-                high=float(row[2]),
-                open=float(row[3]),
-                close=float(row[4]),
-                volume=float(row[5]),
+                low=float(row["low"]),
+                high=float(row["high"]),
+                open=float(row["open"]),
+                close=float(row["close"]),
+                volume=float(row["volume"]),
             )
             for row in rows
         ]

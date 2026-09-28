@@ -39,6 +39,7 @@ class Settings:
     live_confirmation: str = os.getenv("LIVE_CONFIRMATION", "")
     coinbase_cli_enabled: bool = _bool("COINBASE_CLI_ENABLED")
     coinbase_cli_bin: str = os.getenv("COINBASE_CLI_BIN", "coinbase")
+    coinbase_portfolio_id: str = os.getenv("COINBASE_PORTFOLIO_ID", "")
     max_position_quote: float = float(os.getenv("MAX_POSITION_QUOTE", "50"))
     entry_fee_rate: float = float(os.getenv("ENTRY_FEE_RATE", os.getenv("COINBASE_TAKER_FEE_RATE", "0.006")))
     exit_fee_rate: float = float(os.getenv("EXIT_FEE_RATE", os.getenv("COINBASE_TAKER_FEE_RATE", "0.006")))

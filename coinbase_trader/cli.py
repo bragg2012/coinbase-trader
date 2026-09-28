@@ -76,11 +76,13 @@ def main() -> None:
     else:
         client = CoinbaseAdvancedPublic()
         products = client.products()
+        fee_result = client.spot_fees()
+        fee_rate = float(fee_result["fee_tier"]["taker_fee_rate"])
         assets = tuple(item.strip().upper() for item in args.assets.split(",") if item.strip()) or tuple(sorted({item.split("-", 1)[0] for item in settings.products}))
         conversion_costs = {"USD": settings.usd_conversion_cost_bps, "USDC": settings.usdc_conversion_cost_bps}
         by_asset = {}
         for asset in assets:
-            ranked = rank_quote_pairs(products, asset, client, quotes=settings.discovery_quote_currencies, entry_fee_rate=settings.entry_fee_rate, exit_fee_rate=settings.exit_fee_rate, target_quote=settings.max_position_quote, min_depth_quote=settings.min_listing_depth_quote, conversion_cost_bps=conversion_costs)
+            ranked = rank_quote_pairs(products, asset, client, quotes=settings.discovery_quote_currencies, entry_fee_rate=fee_rate, exit_fee_rate=fee_rate, target_quote=settings.max_position_quote, min_depth_quote=settings.min_listing_depth_quote, conversion_cost_bps=conversion_costs)
             by_asset[asset] = [asdict(item) for item in ranked]
         common = {}
         for quote in settings.discovery_quote_currencies:
@@ -88,7 +90,7 @@ def main() -> None:
             if best_costs and all(cost is not None for cost in best_costs):
                 common[quote] = sum(best_costs) / len(best_costs)
         common_quote = min(common, key=common.get) if common else None
-        result = {"assets": list(assets), "entry_fee_rate_assumption": settings.entry_fee_rate, "exit_fee_rate_assumption": settings.exit_fee_rate, "conversion_cost_bps_assumptions": conversion_costs, "min_top10_depth_quote": settings.min_listing_depth_quote, "per_asset_rankings": by_asset, "common_quote_cost_bps": common, "recommended_common_quote": common_quote, "policy": "report-only; pin a selected quote per asset or use the common quote policy before funding; never rotate quotes automatically"}
+        result = {"assets": list(assets), "fee_source": "Coinbase for Agents spot fee tier; taker rate used for both legs", "fee_tier": fee_result["fee_tier"], "taker_fee_rate": fee_rate, "conversion_cost_bps_assumptions": conversion_costs, "min_top10_depth_quote": settings.min_listing_depth_quote, "per_asset_rankings": by_asset, "common_quote_cost_bps": common, "recommended_common_quote": common_quote, "policy": "report-only; pin a selected quote per asset or use the common quote policy before funding; never rotate quotes automatically"}
         result["report"] = args.report
         Path(args.report).parent.mkdir(parents=True, exist_ok=True)
         Path(args.report).write_text(json.dumps(result, indent=2))

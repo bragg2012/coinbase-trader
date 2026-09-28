@@ -52,16 +52,17 @@ pytest -q
 
 For capital management, keep one quote currency for the initial BTC/ETH strategy if both markets are sufficiently liquid and their all-in costs are close. Pair scans report both each asset's lowest-cost route and a common quote currency available for all requested assets. Pin that quote choice; do not switch automatically on every scan. If evidence later supports different quotes per asset, use explicit USD and USDC budget caps and only rebalance between them when the conversion cost is lower than the expected benefit. The portfolio can hold more than one quote asset, but the bot should count only its configured, available quote balance toward new entries.
 
-Historical market data uses Coinbase's public Exchange candles endpoint, so download/backtest do not need credentials. Coinbase Advanced Trade/Agents remains the account and execution boundary. For the execution path, install and configure Coinbase for Agents separately:
+All implemented Coinbase market data, product discovery, fee lookup, and order placement go through the Coinbase for Agents CLI. Portfolio balance reconciliation is the next part of the shared paper/live runtime. Configure the dedicated portfolio ID and CDP key before running Coinbase-backed commands:
 
 ```bash
 npm install -g @coinbase/coinbase-cli
 coinbase env live --key-file /absolute/path/to/cdp-key.json
 coinbase env
 coinbase balance
+coinbase fees product_type==SPOT
 ```
 
-Create a dedicated Coinbase Advanced portfolio and scope the CDP key to that portfolio. Keep the downloaded JSON outside this repository. The official setup reference is [Coinbase for Agents](https://www.coinbase.com/en-gb/blog/coinbase-for-agents) and the [Coinbase CLI/MCP guide](https://docs.cdp.coinbase.com/coinbase-cli/skill.md).
+Create a dedicated Coinbase Advanced portfolio and scope the CDP key to that portfolio. Set `COINBASE_PORTFOLIO_ID` in `.env` to the selected portfolio UUID. Keep the downloaded JSON outside this repository. The official setup reference is [Coinbase for Agents](https://www.coinbase.com/en-gb/blog/coinbase-for-agents) and the [Coinbase CLI/MCP guide](https://docs.cdp.coinbase.com/coinbase-cli/overview).
 
 ## Configuration
 

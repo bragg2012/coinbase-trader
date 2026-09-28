@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+from .coinbase_agents import CoinbaseAgentsCLI
 
 
 @dataclass(frozen=True)
@@ -65,47 +63,36 @@ class PairCost:
 
 
 class CoinbaseAdvancedPublic:
-    """Public Advanced Trade spot catalog and order-book endpoints."""
+    """Advanced Trade access through the supported Coinbase for Agents CLI."""
 
-    base_url = "https://api.coinbase.com/api/v3/brokerage/market"
-
-    def _get(self, path: str) -> object:
-        request = urllib.request.Request(f"{self.base_url}{path}", headers={"User-Agent": "coinbase-trader/0.1", "Accept": "application/json"})
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(request, timeout=20) as response:
-                    return json.load(response)
-            except urllib.error.HTTPError as error:
-                if error.code not in {429, 500, 502, 503, 504} or attempt == 2:
-                    raise
-                time.sleep(0.5 * (attempt + 1))
-        raise RuntimeError("unreachable")
+    def __init__(self, client: CoinbaseAgentsCLI | None = None):
+        self.client = client or CoinbaseAgentsCLI()
 
     def products(self) -> list[MarketProduct]:
         raw_products: list[dict] = []
         cursor = ""
         for _ in range(20):
-            query = urllib.parse.urlencode({"product_type": "SPOT", "limit": 250, **({"cursor": cursor} if cursor else {})})
-            raw = self._get(f"/products?{query}")
+            args = ["products", "list", "product_type==SPOT", "limit==250"]
+            if cursor:
+                args.append(f"cursor=={cursor}")
+            raw = self.client.run(*args)
             if not isinstance(raw, dict) or not isinstance(raw.get("products"), list):
                 raise ValueError("Coinbase Advanced product catalog response was invalid")
             raw_products.extend(row for row in raw["products"] if isinstance(row, dict))
-            paging = raw.get("pagination", {})
-            if not paging.get("has_next"):
+            if not raw.get("has_next"):
                 break
-            cursor = str(paging.get("next_cursor", ""))
+            cursor = str(raw.get("cursor", ""))
             if not cursor:
                 break
         products = []
         for row in raw_products:
-            if not isinstance(row, dict) or "-" not in str(row.get("id", "")):
-                if "-" not in str(row.get("product_id", "")):
-                    continue
-            product_id = str(row.get("product_id", row.get("id", "")))
+            if not isinstance(row, dict) or "-" not in str(row.get("product_id", "")):
+                continue
+            product_id = str(row["product_id"])
             products.append(MarketProduct(
                 product_id=product_id,
-                base=str(row.get("base_currency_id", row.get("base_currency", ""))),
-                quote=str(row.get("quote_currency_id", row.get("quote_currency", ""))),
+                base=str(row.get("base_currency_id", "")),
+                quote=str(row.get("quote_currency_id", "")),
                 status=str(row.get("status", "offline")),
                 post_only=bool(row.get("post_only", False)),
                 limit_only=bool(row.get("limit_only", False)),
@@ -117,9 +104,14 @@ class CoinbaseAdvancedPublic:
             ))
         return products
 
+    def spot_fees(self) -> dict:
+        result = self.client.run("fees", "product_type==SPOT")
+        if not isinstance(result, dict) or not isinstance(result.get("fee_tier"), dict):
+            raise ValueError("Coinbase for Agents did not return the spot fee tier")
+        return result
+
     def book_cost(self, product: MarketProduct, *, entry_fee_rate: float, exit_fee_rate: float, target_quote: float, min_depth_quote: float) -> PairCost:
-        path = f"/product_book?{urllib.parse.urlencode({'product_id': product.product_id, 'limit': 50})}"
-        raw = self._get(path)
+        raw = self.client.run("products", "book", product.product_id)
         if not isinstance(raw, dict) or not isinstance(raw.get("pricebook"), dict):
             raise ValueError(f"invalid order book for {product.product_id}")
         raw = raw["pricebook"]
