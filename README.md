@@ -65,7 +65,7 @@ Copy `.env.example` to `.env`. Important values:
 | `ENABLE_LIVE_TRADING` | `false` | second live-trading guard |
 | `COINBASE_CLI_ENABLED` | `false` | permits agent execution adapter |
 
-The initial JEV implementation is deterministic and auditable. It emits `ACCEPT`, `WATCH`, or `REJECT` with reasons and an input hash. Set `JEV_MODE=HTTP` plus `JEV_API_URL` to call a real JEV-compatible endpoint for each candidate entry and sell-pressure check; request/response pairs are preserved in the report path for replay. Do not call a live endpoint blindly for a month of bars: the runner only calls JEV at each causal entry/position decision.
+The initial JEV implementation is deterministic and auditable. It emits `ACCEPT`, `WATCH`, or `REJECT` with reasons and an input hash. Set `JEV_MODE=HTTP` and add `TYPESAFE_API_KEY` to call Jev at `https://api.typesafe.ai/v1/systemone`; the adapter sends TypeSafe System One `state` plus typed Choice/Score questions for entry and sell-pressure decisions. Request/response pairs are preserved in the report path for replay. Do not call a live endpoint blindly for a month of bars: the runner only calls JEV at each causal entry/position decision.
 
 The backtest is causal: a candle is only visible after it closes, entries occur at that close, exits are checked on later candles, and an open position is closed at the final bar. The report contains every BUY/SELL marker, reason, JEV input hash, P&L, win/loss count, and return on the configured position size.
 

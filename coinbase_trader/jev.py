@@ -37,7 +37,7 @@ class HttpJevDecisionEngine(JevDecisionEngine):
 
     def __init__(self, url: str | None = None, api_key: str | None = None, timeout: float | None = None):
         self.url = url or os.getenv("JEV_API_URL", "").strip()
-        self.api_key = api_key or os.getenv("JEV_API_KEY", "").strip()
+        self.api_key = api_key or os.getenv("TYPESAFE_API_KEY", os.getenv("JEV_API_KEY", "")).strip()
         self.timeout = timeout or float(os.getenv("JEV_TIMEOUT_SECONDS", "30"))
         self.call_log: list[dict] = []
         if not self.url:
@@ -57,15 +57,54 @@ class HttpJevDecisionEngine(JevDecisionEngine):
         return result
 
     def decide(self, observation: Observation) -> DecisionRecord:
-        result = self._call({"action": "ENTRY", "observation": observation.__dict__})
-        raw = str(result.get("decision", result.get("disposition", "REJECT"))).upper()
+        state = json.dumps({"action": "ENTRY", "observation": observation.__dict__}, sort_keys=True)
+        request = {
+            "state": state,
+            "model": os.getenv("JEV_MODEL", "jev-1.13.0"),
+            "questions": {
+                "disposition": {
+                    "type": "choice",
+                    "instructions": "Should this observed BTC/ETH setup be bought at the next available execution point? Use only the supplied state. Return REJECT when evidence is insufficient.",
+                    "criteria": {
+                        "ACCEPT": "The setup has coherent positive momentum and volume confirmation.",
+                        "WATCH": "The setup is interesting but confirmation is incomplete.",
+                        "REJECT": "The setup is adverse, unclear, or insufficient for a buy.",
+                    },
+                },
+                "setup_quality": {
+                    "type": "score",
+                    "instructions": "Score the quality of this short-term trading setup.",
+                    "criteria": ["Poor or adverse", "Mixed or uncertain", "Strong and confirmed"],
+                },
+            },
+        }
+        result = self._call(request)
+        answers = result.get("answers", {})
+        disposition = answers.get("disposition", {})
+        raw = str(disposition.get("choice", result.get("decision", "REJECT"))).upper()
         decision = Decision(raw) if raw in Decision else Decision.REJECT
-        reasons = tuple(str(item) for item in result.get("reasons", ["real JEV response"]))
+        quality = answers.get("setup_quality", {})
+        reasons = (f"TypeSafe disposition={raw}", f"setup_quality={quality.get('score', 'unknown')}")
         payload = json.dumps(observation.__dict__, sort_keys=True).encode()
-        return DecisionRecord(observation.product_id, decision, float(result.get("confidence", 0)), reasons, hashlib.sha256(payload).hexdigest())
+        return DecisionRecord(observation.product_id, decision, float(disposition.get("confidence", 0)), reasons, hashlib.sha256(payload).hexdigest())
 
     def sell_gate(self, observation: Observation, position: Position) -> tuple[bool, str]:
         position_payload = {**position.__dict__, "opened_at": position.opened_at.isoformat()}
-        result = self._call({"action": "SELL_GATE", "observation": observation.__dict__, "position": position_payload})
-        sell = bool(result.get("sell", result.get("exit", False)))
-        return sell, str(result.get("reason", "real JEV sell-pressure response"))
+        request = {
+            "state": json.dumps({"action": "SELL_GATE", "observation": observation.__dict__, "position": position_payload}, sort_keys=True),
+            "model": os.getenv("JEV_MODEL", "jev-1.13.0"),
+            "questions": {
+                "sell_pressure": {
+                    "type": "choice",
+                    "instructions": "Should this open position be sold now because of observed sell pressure or deteriorating structure? Use only the supplied state.",
+                    "criteria": {
+                        "SELL": "Sell pressure or structure deterioration is sufficient to exit.",
+                        "HOLD": "No sufficient sell-pressure evidence; continue holding.",
+                    },
+                }
+            },
+        }
+        result = self._call(request)
+        answer = result.get("answers", {}).get("sell_pressure", {})
+        choice = str(answer.get("choice", "HOLD")).upper()
+        return choice == "SELL", f"TypeSafe sell_pressure={choice}"
