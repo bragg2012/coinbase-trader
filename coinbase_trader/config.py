@@ -40,6 +40,8 @@ class Settings:
     coinbase_cli_enabled: bool = _bool("COINBASE_CLI_ENABLED")
     coinbase_cli_bin: str = os.getenv("COINBASE_CLI_BIN", "coinbase")
     max_position_quote: float = float(os.getenv("MAX_POSITION_QUOTE", "50"))
+    entry_fee_rate: float = float(os.getenv("ENTRY_FEE_RATE", os.getenv("COINBASE_TAKER_FEE_RATE", "0.006")))
+    exit_fee_rate: float = float(os.getenv("EXIT_FEE_RATE", os.getenv("COINBASE_TAKER_FEE_RATE", "0.006")))
     max_daily_loss_quote: float = float(os.getenv("MAX_DAILY_LOSS_QUOTE", "10"))
     stop_loss_pct: float = float(os.getenv("STOP_LOSS_PCT", "0.008"))
     trailing_stop_pct: float = float(os.getenv("TRAILING_STOP_PCT", "0.012"))

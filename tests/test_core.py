@@ -4,7 +4,7 @@ from coinbase_trader.config import Settings
 from coinbase_trader.backtest import run
 from coinbase_trader.jev import JevDecisionEngine
 from coinbase_trader.models import Candle, Decision, Observation, Position
-from coinbase_trader.risk import exit_reason
+from coinbase_trader.risk import estimated_net_pnl_quote, exit_reason
 
 
 def test_product_allowlist_is_fixed():
@@ -42,3 +42,13 @@ def test_backtest_records_causal_buy_and_sell():
     assert result.entries >= 1
     assert result.trades[0].side == "BUY"
     assert result.trades[-1].side == "SELL"
+
+
+def test_fee_adjusted_pnl_and_take_profit():
+    settings = Settings(entry_fee_rate=0.006, exit_fee_rate=0.006)
+    opened = datetime.now(timezone.utc) - timedelta(minutes=2)
+    position = Position("BTC-USD", 100, 1, opened, 100)
+    assert estimated_net_pnl_quote(position, 101.5, settings) > 0
+    assert estimated_net_pnl_quote(position, 101.0, settings) < 0
+    assert exit_reason(position, 101.8, opened, settings) is None
+    assert exit_reason(position, 103.1, opened, settings) == "take_profit"

@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
+import urllib.error
 import urllib.request
 
 from .models import Decision, DecisionRecord, Observation, Position
@@ -26,7 +28,7 @@ class JevDecisionEngine:
             reasons.append("no positive momentum setup")
         return DecisionRecord(observation.product_id, decision, confidence, tuple(reasons), input_hash)
 
-    def sell_gate(self, observation: Observation, position: Position) -> tuple[bool, str]:
+    def sell_gate(self, observation: Observation, position: Position, context: dict | None = None) -> tuple[bool, str]:
         if observation.momentum < -0.002 and observation.volume_ratio >= 1.25:
             return True, "negative momentum with volume expansion"
         return False, "no deterministic sell-pressure trigger"
@@ -49,8 +51,16 @@ class HttpJevDecisionEngine(JevDecisionEngine):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         request = urllib.request.Request(self.url, body, headers=headers, method="POST")
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            result = json.load(response)
+        result = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    result = json.load(response)
+                break
+            except urllib.error.HTTPError as error:
+                if error.code not in {429, 500, 502, 503, 504} or attempt == 2:
+                    raise
+                time.sleep(1.0 * (attempt + 1))
         if not isinstance(result, dict):
             raise ValueError("JEV endpoint returned a non-object response")
         self.call_log.append({"request": payload, "response": result})
@@ -82,16 +92,16 @@ class HttpJevDecisionEngine(JevDecisionEngine):
         answers = result.get("answers", {})
         disposition = answers.get("disposition", {})
         raw = str(disposition.get("choice", result.get("decision", "REJECT"))).upper()
-        decision = Decision(raw) if raw in Decision else Decision.REJECT
+        decision = Decision(raw) if raw in {item.value for item in Decision} else Decision.REJECT
         quality = answers.get("setup_quality", {})
         reasons = (f"TypeSafe disposition={raw}", f"setup_quality={quality.get('score', 'unknown')}")
         payload = json.dumps(observation.__dict__, sort_keys=True).encode()
         return DecisionRecord(observation.product_id, decision, float(disposition.get("confidence", 0)), reasons, hashlib.sha256(payload).hexdigest())
 
-    def sell_gate(self, observation: Observation, position: Position) -> tuple[bool, str]:
+    def sell_gate(self, observation: Observation, position: Position, context: dict | None = None) -> tuple[bool, str]:
         position_payload = {**position.__dict__, "opened_at": position.opened_at.isoformat()}
         request = {
-            "state": json.dumps({"action": "SELL_GATE", "observation": observation.__dict__, "position": position_payload}, sort_keys=True),
+            "state": json.dumps({"action": "SELL_GATE", "observation": observation.__dict__, "position": position_payload, "cost_context": context or {}}, sort_keys=True),
             "model": os.getenv("JEV_MODEL", "jev-1.13.0"),
             "questions": {
                 "sell_pressure": {
