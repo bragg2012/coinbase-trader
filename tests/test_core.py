@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from coinbase_trader.config import Settings
+from coinbase_trader.backtest import run
 from coinbase_trader.jev import JevDecisionEngine
 from coinbase_trader.models import Candle, Decision, Observation, Position
 from coinbase_trader.risk import exit_reason
@@ -28,3 +29,16 @@ def test_trailing_stop_updates_peak_and_exits():
     position = Position("BTC-USD", 100, 1, opened, 100)
     assert exit_reason(position, 101, opened, settings) is None
     assert exit_reason(position, 99.6, opened, settings) == "trailing_stop"
+
+
+def test_backtest_records_causal_buy_and_sell():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candles = []
+    for index in range(25):
+        price = 100 + index * 0.2
+        candles.append(Candle(start + timedelta(minutes=index), "BTC-USD", price, price + 0.1, price - 0.1, price, 100 + index * 10))
+    result = run(candles, Settings(jev_sell_enabled=False))
+    assert result.bars == 25
+    assert result.entries >= 1
+    assert result.trades[0].side == "BUY"
+    assert result.trades[-1].side == "SELL"

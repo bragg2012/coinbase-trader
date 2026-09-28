@@ -17,6 +17,7 @@ class Settings:
     granularity: str = os.getenv("BAR_GRANULARITY", "ONE_MINUTE")
     lookback_bars: int = int(os.getenv("LOOKBACK_BARS", "120"))
     jev_mode: str = os.getenv("JEV_MODE", "DETERMINISTIC").upper()
+    jev_sell_enabled: bool = _bool("JEV_SELL_ENABLED", True)
     enable_live_trading: bool = _bool("ENABLE_LIVE_TRADING")
     live_confirmation: str = os.getenv("LIVE_CONFIRMATION", "")
     coinbase_cli_enabled: bool = _bool("COINBASE_CLI_ENABLED")
@@ -41,4 +42,3 @@ class Settings:
             and self.live_confirmation == "I_UNDERSTAND"
             and self.coinbase_cli_enabled
         )
-

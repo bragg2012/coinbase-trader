@@ -36,11 +36,12 @@ pip install -e '.[dev]'
 cp .env.example .env
 
 python -m coinbase_trader.cli snapshot
-python -m coinbase_trader.cli backtest --csv examples/btc-usd-1m.csv --symbol BTC-USD
+python -m coinbase_trader.cli download --symbol BTC-USD --days 30 --granularity FIVE_MINUTE --out data/btc-usd-5m.csv
+python -m coinbase_trader.cli backtest --csv data/btc-usd-5m.csv --symbol BTC-USD --report reports/btc-jev.json
 pytest -q
 ```
 
-Market data uses Coinbase Advanced Trade's public candles endpoint, so the snapshot and backtest paths do not need credentials. For the execution path, install and configure Coinbase for Agents separately:
+Historical market data uses Coinbase's public Exchange candles endpoint, so download/backtest do not need credentials. Coinbase Advanced Trade/Agents remains the account and execution boundary. For the execution path, install and configure Coinbase for Agents separately:
 
 ```bash
 npm install -g @coinbase/coinbase-cli
@@ -64,7 +65,9 @@ Copy `.env.example` to `.env`. Important values:
 | `ENABLE_LIVE_TRADING` | `false` | second live-trading guard |
 | `COINBASE_CLI_ENABLED` | `false` | permits agent execution adapter |
 
-The initial JEV implementation is deterministic and auditable. It emits `ACCEPT`, `WATCH`, or `REJECT` with reasons and an input hash. A future JEV service/model can replace the decision provider without changing market, risk, backtest, or ledger contracts.
+The initial JEV implementation is deterministic and auditable. It emits `ACCEPT`, `WATCH`, or `REJECT` with reasons and an input hash. Set `JEV_MODE=HTTP` plus `JEV_API_URL` to call a real JEV-compatible endpoint for each candidate entry and sell-pressure check; request/response pairs are preserved in the report path for replay. Do not call a live endpoint blindly for a month of bars: the runner only calls JEV at each causal entry/position decision.
+
+The backtest is causal: a candle is only visible after it closes, entries occur at that close, exits are checked on later candles, and an open position is closed at the final bar. The report contains every BUY/SELL marker, reason, JEV input hash, P&L, win/loss count, and return on the configured position size.
 
 ## Roadmap
 
@@ -73,4 +76,3 @@ The initial JEV implementation is deterministic and auditable. It emits `ACCEPT`
 3. Add replayable decision/outcome evaluation and richer flow/order-book features.
 4. Add a Coinbase for Agents order adapter with small, explicit limits and operator confirmation.
 5. Add more Coinbase-listed products only after the BTC/ETH paper acceptance gate passes.
-
